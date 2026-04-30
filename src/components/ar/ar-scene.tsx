@@ -43,6 +43,23 @@ export function ARScene({ onReady, onError }: ARSceneProps) {
         throw new Error('Камера не поддерживается браузером');
       }
       
+      // Явно запрашиваем доступ к камере
+      setLoadingMessage('Запрос доступа к камере...');
+      try {
+        await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: 'environment' } 
+        });
+        console.log('[AR] Камера доступна');
+      } catch (camErr: any) {
+        if (camErr.name === 'NotAllowedError') {
+          throw new Error('Доступ к камере запрещён. Разрешите в настройках браузера.');
+        }
+        if (camErr.name === 'NotFoundError') {
+          throw new Error('Камера не найдена на устройстве.');
+        }
+        console.warn('[AR] Камера недоступна:', camErr);
+      }
+      
       setLoadingMessage('Загрузка AR библиотек...');
       
       // Проверяем загрузку A-Frame + THREE
