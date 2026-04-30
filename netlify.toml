@@ -4,7 +4,7 @@
 
 [build]
   command = "npm run build"
-  publish = "out"
+  publish = ".next"
 
 # Настройки для Next.js static export
 [build.environment]
