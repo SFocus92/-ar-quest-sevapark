@@ -88,12 +88,13 @@ export const STEPS: QuestStep[] = [
     location: 'У главных ворот парка',
     hint: 'Наведи камеру на объект у входа в парк',
     clueForNext: 'Отлично! Ты сделал первый шаг! Теперь ищи старый дуб слева от главной аллеи. Там спрятана следующая подсказка...',
-    objectType: 'scroll',
+    objectType: 'model',
+    modelUrl: '/assets/models/astronaut.glb',
     scrollText: 'Привет, путник! Ты вступил на путь тайн СеваПарка. Твоя первая задача — найти древний дуб. Остерегайся ложных путей!',
     soundUrl: '/assets/sounds/discover.mp3',
     soundDescription: 'Звук обнаружения',
     animation: 'fadeIn',
-    scale: 0.8,
+    scale: 1.5,
   },
   
   // ---------------------------------------------------
@@ -109,12 +110,12 @@ export const STEPS: QuestStep[] = [
     location: 'Слева от главной аллеи, рядом с фонтаном',
     hint: 'Ищи дерево с большим дуплом — там тайник!',
     clueForNext: 'Прекрасно! Ты нашёл ключ от следующей тайны. Теперь направляйся к деревянной скамейке у фонтана. Там тебя ждёт новая загадка...',
-    objectType: 'key',
+    objectType: 'model',
     modelUrl: '/assets/models/key.glb',
     soundUrl: '/assets/sounds/magic-chime.mp3',
     soundDescription: 'Магический звон ключа',
     animation: 'scaleIn',
-    scale: 0.3,
+    scale: 0.8,
   },
   
   // ---------------------------------------------------
@@ -130,12 +131,13 @@ export const STEPS: QuestStep[] = [
     location: 'У центрального фонтана',
     hint: 'Ищи скамейку с изображением дракона на спинке',
     clueForNext: 'Ты разгадал загадку скамейки! Следующая подсказка спрятана у каменного грота. Ищи вход в небольшую пещеру...',
-    objectType: 'scroll',
+    objectType: 'model',
+    modelUrl: '/assets/models/astronaut.glb',
     scrollText: 'Ты близок к цели! Каменный грот хранит древний секрет. Найди вход и получишь награду. Но помни — путь не прост!',
     soundUrl: '/assets/sounds/scroll-unfurl.mp3',
     soundDescription: 'Звук разворачивающегося свитка',
     animation: 'fadeIn',
-    scale: 0.7,
+    scale: 1.5,
   },
   
   // ---------------------------------------------------
@@ -151,12 +153,12 @@ export const STEPS: QuestStep[] = [
     location: 'В дальнем углу парка, за детской площадкой',
     hint: 'Ищи каменную арку, увитую плющом',
     clueForNext: 'Ты нашёл древний портал! Он ведёт к сокровищнице. Теперь ищи мостик через ручей — там ждёт дух-хранитель...',
-    objectType: 'portal',
-    modelUrl: '/assets/models/portal.glb',
+    objectType: 'model',
+    modelUrl: '/assets/models/trex.glb',
     soundUrl: '/assets/sounds/portal-whoosh.mp3',
     soundDescription: 'Звук портала',
     animation: 'portalIn',
-    scale: 0.5,
+    scale: 1.2,
   },
   
   // ---------------------------------------------------
@@ -172,12 +174,12 @@ export const STEPS: QuestStep[] = [
     location: 'За каменным гротом, через ручей',
     hint: 'Ищи мостик с вырезанными на перилах символами',
     clueForNext: 'Дух-хранитель показал тебе путь! Осталось найти последний ключ у статуи дракона. Торопись — награда близко!',
-    objectType: 'gem',
-    modelUrl: '/assets/models/gem.glb',
+    objectType: 'model',
+    modelUrl: '/assets/models/key.glb',
     soundUrl: '/assets/sounds/gem-sparkle.mp3',
     soundDescription: 'Звук сияющего кристалла',
     animation: 'bounceIn',
-    scale: 0.25,
+    scale: 0.8,
   },
   
   // ---------------------------------------------------
@@ -193,12 +195,12 @@ export const STEPS: QuestStep[] = [
     location: 'На центральной площади, у фонтана',
     hint: 'Ищи дракона с рубиновыми глазами — он укажет путь',
     clueForNext: 'Ты нашёл последний ключ! Сундук с сокровищами ждёт тебя у озера. Это финальный этап — награда почти твоя!',
-    objectType: 'compass',
-    modelUrl: '/assets/models/compass.glb',
+    objectType: 'model',
+    modelUrl: '/assets/models/trex.glb',
     soundUrl: '/assets/sounds/compass-click.mp3',
     soundDescription: 'Звук компаса',
     animation: 'rotateIn',
-    scale: 0.4,
+    scale: 1.2,
   },
   
   // ---------------------------------------------------
@@ -213,13 +215,13 @@ export const STEPS: QuestStep[] = [
     description: 'Найди сундук у озера',
     location: 'У озера, под ивой',
     hint: 'Ищи старую иву у воды — под ней спрятан сундук',
-    clueForNext: '', // Финальный шаг - нет подсказки
-    objectType: 'chest',
-    modelUrl: '/assets/models/treasure-chest.glb',
+    clueForNext: '',
+    objectType: 'model',
+    modelUrl: '/assets/models/chest.glb',
     soundUrl: '/assets/sounds/victory-fanfare.mp3',
     soundDescription: 'Победная фанфара',
     animation: 'scaleIn',
-    scale: 0.5,
+    scale: 1.0,
   },
 ];
 
