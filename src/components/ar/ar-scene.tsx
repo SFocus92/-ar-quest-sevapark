@@ -2,10 +2,6 @@
  * =====================================================
  * AR-СЦЕНА - MINDAR СКАНЕР
  * =====================================================
- * 
- * Использует MindAR для распознавания .mind маркеров
- * 
- * =====================================================
  */
 
 'use client';
@@ -23,7 +19,7 @@ export function ARScene({ onReady, onError }: ARSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState('Инициализация...');
-  const [scanStatus, setScanStatus] = useState('Подготовка...');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
   const { 
     handleMarkerFound, 
@@ -35,101 +31,128 @@ export function ARScene({ onReady, onError }: ARSceneProps) {
   } = useQuest();
 
   // ---------------------------------------------------
-  // ИНИЦИАЛИЗАЦИЯ MINDAR
+  // ИНИЦИАЛИЗАЦИЯ
   // ---------------------------------------------------
   
   const initAR = useCallback(async () => {
     try {
+      console.log('[AR] Начало инициализации...');
+      
+      // Проверяем поддержку камеры
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Камера не поддерживается');
+        throw new Error('Камера не поддерживается браузером');
       }
       
-      setLoadingMessage('Загрузка MindAR...');
+      setLoadingMessage('Загрузка AR библиотек...');
       
-      // Ждём MindAR THREE
-      let mindarLoaded = false;
-      for (let i = 0; i < 100; i++) {
-        if ((window as any).MINDAR && (window as any).THREE) {
-          mindarLoaded = true;
+      // Проверяем загрузку A-Frame + THREE
+      let attempts = 0;
+      while (attempts < 50) {
+        const aframe = (window as any).AFRAME;
+        const three = (window as any).THREE;
+        const mindar = (window as any).MINDAR;
+        
+        if (aframe && three && mindar) {
+          console.log('[AR] Библиотеки загружены');
           break;
         }
+        
         await new Promise(r => setTimeout(r, 100));
+        attempts++;
       }
       
-      if (!mindarLoaded) {
-        throw new Error('MindAR не загрузился');
+      const AFRAME = (window as any).AFRAME;
+      const THREE = (window as any).THREE;
+      const MINDAR = (window as any).MINDAR;
+      
+      if (!AFRAME || !THREE || !MINDAR) {
+        console.error('[AR] Не загрузились: A-Frame=', !!AFRAME, 'THREE=', !!THREE, 'MINDAR=', !!MINDAR);
+        throw new Error('AR библиотеки не загрузились. Проверьте интернет-соединение.');
       }
       
       setLoadingMessage('Настройка камеры...');
+      console.log('[AR] Создание MindAR...');
       
-      const MINDAR = (window as any).MINDAR;
-      const THREE = (window as any).THREE;
-      
-      // Собираем все маркеры
-      const imageList = STEPS
-        .filter(step => step.markerType === 'nft' && step.nftDescriptor)
-        .map(step => ({
-          name: step.id,
-          path: step.nftDescriptor
-        }));
-      
-      // Создаём MindAR
-      const mindar = new MINDAR.Image({
-        imageList: imageList,
-        filterThreshold: 0.7,
-        uiLoading: 'no',
-        uiScanning: 'no',
-        uiError: 'no'
+      // Собираем маркеры
+      const imageTargets: string[] = [];
+      STEPS.forEach(step => {
+        if (step.markerType === 'nft' && step.nftDescriptor) {
+          imageTargets.push(step.nftDescriptor + '.mind');
+        }
       });
       
+      console.log('[AR] Маркеры:', imageTargets);
+      
+      // Создаём MindAR с правильной конфигурацией
+      const mindar = new MINDAR.Image({
+        imageTargetsSrc: imageTargets.join(','),
+        filterThreshold: 0.7,
+        uiLoading: 'no',
+        uiScanning: 'no', 
+        uiError: 'no',
+        showStats: false,
+        deviceType: 'auto'
+      });
+      
+      console.log('[AR] MindAR создан');
+      
+      // Рендерер
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(window.devicePixelRatio);
-      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       
       const scene = new THREE.Scene();
-      const camera = new THREE.Camera();
+      const camera = new THREE.PerspectiveCamera(1, 1, 0.1, 1000);
       
-      // Создаём свет
+      // Свет
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
       scene.add(ambientLight);
-      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-      directionalLight.position.set(0, 10, 0);
-      scene.add(directionalLight);
       
-      // Добавляем якоря для каждого маркера
-      const anchors = STEPS.map((step, idx) => {
-        const anchor = mindar.addAnchor(idx);
+      // Обработчики событий
+      mindar.onStart = () => {
+        console.log('[AR] MindAR started');
         
-        // Создаём группу для 3D объекта
-        const group = new THREE.Group();
-        group.visible = false;
-        
-        // Добавляем модель если есть
-        if (step.modelUrl) {
-          const loader = new THREE.GLTFLoader();
-          try {
-            loader.load(step.modelUrl, (gltf) => {
-              const model = gltf.scene;
-              model.scale.set(step.scale, step.scale, step.scale);
-              model.rotation.x = Math.PI / 2;
-              group.add(model);
-            });
-          } catch (e) {
-            console.log('Model load error:', e);
-          }
+        const video = document.querySelector('video');
+        if (video) {
+          video.style.width = '100%';
+          video.style.height = '100%';
+          video.style.objectFit = 'cover';
         }
         
+        const canvas = renderer.domElement;
+        canvas.style.position = 'absolute';
+        canvas.style.top = '0';
+        canvas.style.left = '0';
+        containerRef.current?.appendChild(canvas);
+        
+        setIsLoading(false);
+        setCameraReady(true);
+        onReady?.();
+        
+        console.log('[AR] Готов к сканированию!');
+        
+        // Запускаем рендеринг
+        const animate = () => {
+          renderer.render(scene, camera);
+          requestAnimationFrame(animate);
+        };
+        animate();
+      };
+      
+      // Обработка маркеров
+      for (let i = 0; i < STEPS.length; i++) {
+        const step = STEPS[i];
+        const anchor = mindar.addAnchor(i);
+        
+        const group = new THREE.Group();
+        group.visible = false;
         anchor.group.add(group);
         
-        // Обработчик обнаружения
         anchor.onTargetFound = () => {
-          console.log('Found:', step.id);
+          console.log('[AR] Найден маркер:', step.id);
           group.visible = true;
-          setScanStatus(`Найден: ${step.title} ✅`);
           handleMarkerFound(step.id);
           
-          // Воспроизводим звук
           if (step.soundUrl) {
             new Audio(step.soundUrl).play().catch(() => {});
           }
@@ -137,51 +160,23 @@ export function ARScene({ onReady, onError }: ARSceneProps) {
         
         anchor.onTargetLost = () => {
           group.visible = false;
-          setScanStatus('Сканирование...');
         };
-        
-        return anchor;
-      });
-      
-      // Рендеринг
-      const render = () => {
-        renderer.render(scene, camera);
-        requestAnimationFrame(render);
-      };
-      
-      mindar.onReady = () => {
-        console.log('MindAR ready');
-        
-        const video = document.querySelector('video') as HTMLVideoElement;
-        if (video) {
-          video.style.objectFit = 'cover';
-        }
-        
-        containerRef.current?.appendChild(renderer.domElement);
-        render();
-        
-        mindar.start();
-        
-        setIsLoading(false);
-        setCameraReady(true);
-        onReady?.();
-        setScanStatus('Сканирование... Наведите на фото');
-      };
+      }
       
       mindar.onError = (err: any) => {
-        console.error('MindAR error:', err);
-        setCameraError('Ошибка AR');
-        onError?.('Ошибка');
+        console.error('[AR] MindAR error:', err);
+        setCameraError('Ошибка AR: ' + (err.message || err));
+        onError?.(err.message);
       };
       
-    } catch (error: any) {
-      console.error('Init error:', error);
-      let msg = 'Ошибка инициализации';
-      if (error.message?.includes('timeout')) msg = 'Не загрузились AR библиотеки';
-      else if (error.message?.includes('камер')) msg = 'Камера недоступна';
+      // Запуск
+      mindar.start();
       
-      setCameraError(msg);
-      onError?.(msg);
+    } catch (error: any) {
+      console.error('[AR] Ошибка инициализации:', error);
+      setErrorMessage(error.message || 'Неизвестная ошибка');
+      setCameraError(error.message || 'Ошибка инициализации AR');
+      onError?.(error.message);
       setIsLoading(false);
     }
   }, [handleMarkerFound, setCameraReady, setCameraError, onReady, onError]);
@@ -191,21 +186,24 @@ export function ARScene({ onReady, onError }: ARSceneProps) {
   // ---------------------------------------------------
   
   useEffect(() => {
-    initAR();
+    // Небольшая задержка чтобы A-Frame загрузился
+    const timer = setTimeout(() => {
+      initAR();
+    }, 1000);
+    
+    return () => clearTimeout(timer);
   }, [initAR]);
-
-  // ---------------------------------------------------
-  // ТЕКУЩИЙ ШАГ
-  // ---------------------------------------------------
-  
-  const displayStep = currentMarker && showingContent 
-    ? STEPS.find(s => s.id === currentMarker) 
-    : null;
 
   // ---------------------------------------------------
   // РЕНДЕРИНГ
   // ---------------------------------------------------
   
+  const displayStep = currentMarker && showingContent 
+    ? STEPS.find(s => s.id === currentMarker) 
+    : null;
+  
+  const currentStep = STEPS[completedSteps];
+
   return (
     <div 
       ref={containerRef}
@@ -219,55 +217,50 @@ export function ARScene({ onReady, onError }: ARSceneProps) {
         backgroundColor: '#000',
       }}
     >
-      {/* Статус сканирования */}
-      <div style={{
-        position: 'absolute',
-        top: 20,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        backgroundColor: 'rgba(0,0,0,0.85)',
-        padding: '12px 24px',
-        borderRadius: 25,
-        color: '#22c55e',
-        fontSize: '16px',
-        zIndex: 60,
-        fontWeight: 'bold',
-        border: '2px solid #22c55e',
-        maxWidth: '90%',
-        textAlign: 'center',
-      }}>
-        📷 {scanStatus}
-      </div>
+      {/* Статус */}
+      {!isLoading && !errorMessage && (
+        <div style={{
+          position: 'absolute',
+          top: 20,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: 'rgba(0,0,0,0.85)',
+          padding: '12px 24px',
+          borderRadius: 25,
+          color: '#22c55e',
+          fontSize: '16px',
+          zIndex: 60,
+          fontWeight: 'bold',
+          border: '2px solid #22c55e',
+        }}>
+          📷 Готов к сканированию
+        </div>
+      )}
 
       {/* Прогресс */}
-      <div style={{
-        position: 'absolute',
-        bottom: 30,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        backgroundColor: 'rgba(0,0,0,0.8)',
-        padding: '15px 25px',
-        borderRadius: 30,
-        color: 'white',
-        fontSize: '15px',
-        zIndex: 50,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-      }}>
-        <span>📍</span>
-        <span>Этап {completedSteps + 1} из {STEPS.length}:</span>
-        <span style={{ color: '#22c55e', fontWeight: 'bold' }}>
-          {STEPS[completedSteps]?.title || 'Квест завершён'}
-        </span>
-      </div>
+      {!isLoading && !errorMessage && (
+        <div style={{
+          position: 'absolute',
+          bottom: 30,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          padding: '15px 25px',
+          borderRadius: 30,
+          color: 'white',
+          fontSize: '15px',
+          zIndex: 50,
+        }}>
+          📍 Этап {completedSteps + 1} из {STEPS.length}: {currentStep?.title || 'Квест завершён'}
+        </div>
+      )}
 
-      {/* 3D объект при обнаружении */}
+      {/* 3D объект */}
       {displayStep && showingContent && (
         <MarkerObject step={displayStep} />
       )}
 
-      {/* Загрузка */}
+      {/* Загрузка или ошибка */}
       {isLoading && (
         <div style={{
           position: 'absolute',
@@ -292,9 +285,46 @@ export function ARScene({ onReady, onError }: ARSceneProps) {
             animation: 'spin 1s linear infinite',
           }} />
           <p style={{ marginTop: 20, fontSize: 18 }}>{loadingMessage}</p>
-          <p style={{ marginTop: 10, fontSize: 14, opacity: 0.7, maxWidth: '300px', textAlign: 'center' }}>
-            Наведите камеру на фото маркера
+          <p style={{ marginTop: 10, fontSize: 14, opacity: 0.7 }}>
+            Подождите, загружаются AR библиотеки...
           </p>
+        </div>
+      )}
+
+      {errorMessage && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'rgba(0,0,0,0.95)',
+          color: 'white',
+          zIndex: 100,
+          padding: '20px',
+          textAlign: 'center',
+        }}>
+          <p style={{ fontSize: 24, color: '#ef4444', marginBottom: 20 }}>⚠️ Ошибка</p>
+          <p style={{ fontSize: 16 }}>{errorMessage}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            style={{
+              marginTop: 20,
+              padding: '12px 24px',
+              fontSize: 16,
+              backgroundColor: '#22c55e',
+              border: 'none',
+              borderRadius: 8,
+              color: 'white',
+              cursor: 'pointer',
+            }}
+          >
+            Перезагрузить
+          </button>
         </div>
       )}
 

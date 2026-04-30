@@ -21,7 +21,7 @@ import { ErrorScreen } from '@/components/ar/error-screen';
 import { useQuest } from '@/hooks/use-quest';
 
 // =====================================================
-// ЗАГРУЗКА MINDAR (ВНЕ КОМПОНЕНТА)
+// ЗАГРУЗКА MINDAR + THREE (ВНЕ КОМПОНЕНТА)
 // =====================================================
 
 function loadMindAR(): Promise<void> {
@@ -31,12 +31,26 @@ function loadMindAR(): Promise<void> {
       return;
     }
     
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js';
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Failed to load MindAR'));
-    document.head.appendChild(script);
+    const loadScript = (src: string) => new Promise<void>((res, rej) => {
+      if (document.querySelector(`script[src="${src}"]`)) {
+        res();
+        return;
+      }
+      const s = document.createElement('script');
+      s.src = src;
+      s.async = true;
+      s.onload = () => res();
+      s.onerror = () => rej(new Error(`Failed to load ${src}`));
+      document.head.appendChild(s);
+    });
+    
+    // Загружаем сначала A-Frame (включает THREE), затем MindAR
+    Promise.all([
+      loadScript('https://aframe.io/releases/1.0.4/aframe.min.js'),
+    ])
+      .then(() => loadScript('https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js'))
+      .then(() => resolve())
+      .catch(reject);
   });
 }
 
