@@ -1,6 +1,6 @@
 /**
  * =====================================================
- * AR-СЦЕНА - A-FRAME КОМПОНЕНТ + МОБИЛЬНАЯ АДАПТАЦИЯ
+ * AR-СЦЕНА - ПРАВИЛЬНАЯ A-FRAME + MINDAR ИНИЦИАЛИЗАЦИЯ
  * =====================================================
  */
 
@@ -16,7 +16,8 @@ interface ARSceneProps {
 }
 
 export function ARScene({ onReady, onError }: ARSceneProps) {
-  const sceneRef = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const sceneRef = useRef<HTMLASceneElement | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [status, setStatus] = useState('Инициализация...');
   const [error, setError] = useState<string | null>(null);
@@ -33,58 +34,70 @@ export function ARScene({ onReady, onError }: ARSceneProps) {
         setStatus('Ожидание A-Frame...');
         await waitForGlobal('AFRAME', 15000);
         console.log('[AR] A-Frame готов');
+        const AFRAME = (window as any).AFRAME;
 
-        setStatus('Загрузка MindAR A-Frame...');
+        setStatus('Загрузка MindAR...');
         await loadScript('/js/mindar-image-aframe.js');
-        
-        await new Promise(r => setTimeout(r, 1000));
-        
-        const MINDAR = (window as any).MINDAR || (window as any).AFRAME?.components?.mindar;
-        console.log('[AR] MindAR A-Frame загружен');
-
-        setStatus('Настройка сцены...');
+        await new Promise(r => setTimeout(r, 500));
         
         const targets = STEPS
           .filter(s => s.markerType === 'nft' && s.nftDescriptor)
-          .map(s => s.nftDescriptor!.replace('/assets/nft/', '') + '.mind')
+          .map(s => s.nftDescriptor!.replace('/assets/nft/', ''))
           .join(',');
         
         console.log('[AR] Targets:', targets);
 
-        const scene = document.querySelector('a-scene');
-        if (scene) {
-          scene.setAttribute('mindar-image', `imageTargetSrc: /assets/nft/${targets}; filterMinCF: 0.1; filterBeta: 0.001`);
-          
-          scene.addEventListener('arReady', () => {
-            console.log('[AR] AR готов!');
-            setIsLoading(false);
-            setCameraReady(true);
-            onReady?.();
-            setStatus('📷 Наведите камеру на маркер');
-          });
+        const container = containerRef.current;
+        if (!container) throw new Error('Container not found');
 
-          scene.addEventListener('targetFound', (e: any) => {
-            const index = e.detail.targetIndex;
+        const scene = document.createElement('a-scene');
+        scene.setAttribute('embedded');
+        scene.setAttribute('renderer', 'antialias: true, colorManagement: true, physicallyCorrectLights: true');
+        scene.setAttribute('vr-mode-ui', 'enabled: false');
+        scene.setAttribute('device-orientation-permission-ui', 'enabled: false');
+        scene.setAttribute('style', 'width: 100%; height: 100%; position: absolute; top: 0; left: 0;');
+        
+        scene.setAttribute('mindar-image', 'imageTargetSrc: /assets/nft/' + targets + '.mind; filterMinCF: 0.1; filterBeta: 0.001');
+
+        const camera = document.createElement('a-camera');
+        camera.setAttribute('position', '0 0 0');
+        camera.setAttribute('look-controls', 'enabled: false');
+        scene.appendChild(camera);
+
+        scene.addEventListener('arReady', () => {
+          console.log('[AR] AR готов!');
+          setIsLoading(false);
+          setCameraReady(true);
+          onReady?.();
+          setStatus('📷 Наведите камеру на маркер');
+        });
+
+        scene.addEventListener('targetFound', (e: any) => {
+          const index = e.detail?.targetIndex;
+          if (index !== undefined) {
             const step = STEPS[index];
             if (step) {
               console.log('[AR] 🎯 Найден:', step.title);
               handleMarkerFound(step.id);
-              setStatus(`✅ ${step.title}`);
+              setStatus('✅ ' + step.title);
             }
-          });
+          }
+        });
 
-          scene.addEventListener('targetLost', () => {
-            setStatus('🔍 Ищите маркер...');
-          });
+        scene.addEventListener('targetLost', () => {
+          setStatus('🔍 Ищите маркер...');
+        });
 
-          scene.addEventListener('error', (e: any) => {
-            console.error('[AR] Ошибка:', e);
-            setError(e.message || 'Ошибка AR');
-            setCameraError(e.message);
-          });
+        scene.addEventListener('error', (e: any) => {
+          const errMsg = e.detail?.message || 'Ошибка AR';
+          console.error('[AR] Ошибка:', errMsg);
+          setError(errMsg);
+          setCameraError(errMsg);
+          onError?.(errMsg);
+        });
 
-          await scene.components['mindar-image']?.start?.();
-        }
+        container.appendChild(scene);
+        sceneRef.current = scene as any;
 
       } catch (err: any) {
         console.error('[AR] ❌ Ошибка:', err);
@@ -95,47 +108,19 @@ export function ARScene({ onReady, onError }: ARSceneProps) {
     }
 
     init();
+
+    return () => {
+      if (sceneRef.current) {
+        sceneRef.current.remove();
+      }
+    };
   }, []);
 
   const currentStep = STEPS[completedSteps];
   const displayStep = currentMarker && showingContent ? STEPS.find(s => s.id === currentMarker) : null;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 0, background: '#000' }}>
-      <a-scene 
-        ref={sceneRef}
-        embedded
-        renderer="antialias: true, colorManagement: true"
-        vr-mode-ui="enabled: false"
-        device-orientation-permission-ui="enabled: false"
-        style={{ width: '100%', height: '100%' }}
-      >
-        <a-assets>
-          {STEPS.map(step => (
-            <img 
-              key={step.id}
-              id={`img-${step.id}`}
-              src={step.imageSrc || '/placeholder.png'}
-              crossOrigin="anonymous"
-            />
-          ))}
-        </a-assets>
-
-        <a-camera position="0 0 0" look-controls="enabled: false" />
-
-        {displayStep && (
-          <a-entity visible="false">
-            <a-plane 
-              position="0 0 -2" 
-              width="1.5" 
-              height="1" 
-              color="#000" 
-              opacity="0.8"
-            />
-          </a-entity>
-        )}
-      </a-scene>
-
+    <div ref={containerRef} style={{ position: 'fixed', inset: 0, zIndex: 0, background: '#000' }}>
       <StatusBar status={status} />
       <ProgressBar current={completedSteps} total={STEPS.length} title={currentStep?.title} />
       {displayStep && <MarkerOverlay step={displayStep} />}
@@ -176,7 +161,7 @@ function ProgressBar({ current, total, title }: { current: number; total: number
         📍 {current + 1}/{total}: {title || '...'}
       </div>
       <div style={{ marginTop: 6, height: 4, background: 'rgba(255,255,255,0.2)', borderRadius: 2, overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${pct}%`, background: 'linear-gradient(90deg, #4ade80, #22c55e)', transition: 'width 0.5s ease' }} />
+        <div style={{ height: '100%', width: pct + '%', background: 'linear-gradient(90deg, #4ade80, #22c55e)', transition: 'width 0.5s ease' }} />
       </div>
     </div>
   );
@@ -188,7 +173,7 @@ function MarkerOverlay({ step }: { step: QuestStep }) {
       position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', zIndex: 30, padding: 20,
     }}>
-      <div style={{ textAlign: 'center', transform: `scale(${Math.min(step.scale, 0.8)})`, maxWidth: '100%', width: '100%', wordBreak: 'break-word' }}>
+      <div style={{ textAlign: 'center', transform: 'scale(' + Math.min(step.scale, 0.8) + ')', maxWidth: '100%', width: '100%', wordBreak: 'break-word' }}>
         <div style={{
           width: 'clamp(50px, 12vw, 80px)', height: 'clamp(50px, 12vw, 80px)',
           margin: '0 auto', borderRadius: '50%',
