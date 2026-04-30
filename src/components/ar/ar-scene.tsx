@@ -37,14 +37,22 @@ export function ARScene({ onReady, onError }: ARSceneProps) {
         console.log('[AR] A-Frame + THREE готовы');
 
         setStatus('Загрузка MindAR...');
+        
+        // Загружаем ESM модуль
         const mindarModule = await import(
           'https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js'
         );
 
-        const MindARImage = mindarModule.MindARImage || mindarModule.default?.MindARImage || mindarModule.default;
-        if (!MindARImage) throw new Error('MindARImage не найден');
+        console.log('[AR] MindAR модуль:', mindarModule);
+        
+        // Ищем конструктор - MindAR экспортирует как default
+        const MindARImage = mindarModule.default;
+        if (!MindARImage || typeof MindARImage !== 'function') {
+          console.error('[AR] MindAR exports:', mindarModule);
+          throw new Error('MindARImage не найден в модуле');
+        }
 
-        console.log('[AR] MindAR модуль загружен');
+        console.log('[AR] MindARImage найден:', typeof MindARImage);
 
         const nftSteps = STEPS.filter(s => s.markerType === 'nft' && s.nftDescriptor);
         if (nftSteps.length === 0) throw new Error('Нет NFT маркеров');
@@ -52,11 +60,16 @@ export function ARScene({ onReady, onError }: ARSceneProps) {
         const firstMarker = nftSteps[0];
         setStatus('Создание сканера...');
         
+        console.log('[AR] Первый маркер:', firstMarker.nftDescriptor + '.mind');
+        
         const scanner = new MindARImage({
           imageTargetSrc: firstMarker.nftDescriptor + '.mind',
           filterMinCF: 0.1,
           filterBeta: 0.001,
+          uiScanning: '#scanning',
         });
+
+        console.log('[AR] Сканер создан:', scanner);
 
         const remainingMarkers = nftSteps.slice(1);
         if (remainingMarkers.length > 0) {
