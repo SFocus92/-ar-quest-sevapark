@@ -21,12 +21,13 @@ import { ErrorScreen } from '@/components/ar/error-screen';
 import { useQuest } from '@/hooks/use-quest';
 
 // =====================================================
-// ЗАГРУЗКА AR БИБЛИОТЕК (ВНЕ КОМПОНЕНТА)
+// ЗАГРУЗКА MINDAR UMD + A-FRAME (ВНЕ КОМПОНЕНТА)
 // =====================================================
 
 async function loadARLibs(): Promise<boolean> {
   // Проверяем уже загружено
-  if ((window as any).AFRAME) {
+  if ((window as any).MINDAR && (window as any).THREE) {
+    console.log('[AR] MindAR уже загружен');
     return true;
   }
   
@@ -36,19 +37,56 @@ async function loadARLibs(): Promise<boolean> {
         res();
         return;
       }
+      console.log('[AR] Загрузка:', src);
       const s = document.createElement('script');
       s.src = src;
       s.async = true;
       s.crossOrigin = 'anonymous';
-      s.onload = () => res();
-      s.onerror = () => res(); // Игнорируем ошибки
+      s.onload = () => {
+        console.log('[AR] Загружено:', src);
+        res();
+      };
+      s.onerror = () => {
+        console.error('[AR] Ошибка:', src);
+        res(); // Игнорируем ошибки, не блокируем
+      };
       document.head.appendChild(s);
     });
     
-    // Пробуем загрузить A-Frame, но не блокируем запуск
+    // 1. Грузим A-Frame
     loadScript('https://aframe.io/releases/1.4.0/aframe.min.js')
-      .then(() => setTimeout(() => resolve(true), 1000)) // Даём время на загрузку
-      .catch(() => resolve(true)); // В любом случае продолжаем
+      .then(() => {
+        // 2. Ждём пока THREE загрузится в A-Frame
+        return new Promise<void>(res => {
+          let attempts = 0;
+          const check = setInterval(() => {
+            if ((window as any).THREE) {
+              clearInterval(check);
+              console.log('[AR] THREE готов');
+              res();
+            }
+            attempts++;
+            if (attempts > 50) {
+              clearInterval(check);
+              res(); // Таймаут
+            }
+          }, 100);
+        });
+      })
+      .then(() => {
+        // 3. Грузим UMD версию MindAR (правильный формат)
+        return loadScript(
+          'https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.umd.prod.js'
+        );
+      })
+      .then(() => {
+        console.log('[AR] MindAR UMD загружен');
+        setTimeout(() => resolve(true), 500);
+      })
+      .catch(() => {
+        console.log('[AR] Продолжаем без MindAR');
+        resolve(true); // В любом случае продолжаем
+      });
   });
 }
 
