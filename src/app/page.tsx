@@ -21,35 +21,22 @@ import { ErrorScreen } from '@/components/ar/error-screen';
 import { useQuest } from '@/hooks/use-quest';
 
 // =====================================================
-// ЗАГРУЗКА A-FRAME + AR.JS NFT (ВНЕ КОМПОНЕНТА)
+// ЗАГРУЗКА A-FRAME (ВНЕ КОМПОНЕНТА)
 // =====================================================
 
-function loadARLibs(): Promise<void> {
+function loadAFrame(): Promise<void> {
   return new Promise((resolve, reject) => {
     if ((window as any).AFRAME) {
       resolve();
       return;
     }
     
-    const loadScript = (src: string) => new Promise<void>((res, rej) => {
-      if (document.querySelector(`script[src="${src}"]`)) {
-        res();
-        return;
-      }
-      const s = document.createElement('script');
-      s.src = src;
-      s.async = true;
-      s.onload = () => res();
-      s.onerror = () => rej(new Error(`Failed to load ${src}`));
-      document.head.appendChild(s);
-    });
-    
-    Promise.all([
-      loadScript('https://aframe.io/releases/1.4.0/aframe.min.js'),
-      loadScript('https://cdn.jsdelivr.net/npm/aframe-nft-component@0.2.1/dist/aframe-nft-component.min.js'),
-    ])
-      .then(() => resolve())
-      .catch(reject);
+    const script = document.createElement('script');
+    script.src = 'https://aframe.io/releases/1.4.0/aframe.min.js';
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Failed to load A-Frame'));
+    document.head.appendChild(script);
   });
 }
 
@@ -94,10 +81,22 @@ export default function QuestApp() {
   // ОБРАБОТЧИК НАЧАЛА КВЕСТА
   // ---------------------------------------------------
   
-  const handleStart = useCallback(() => {
+  const handleStart = useCallback(async () => {
     // Проверяем HTTPS (кроме localhost)
     if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
-      setCameraError('Для работы AR требуется HTTPS. Откройте приложение по защищённой ссылке.');
+      const isVercel = location.hostname.includes('.vercel.app');
+      const isNetlify = location.hostname.includes('.netlify.app');
+      if (!isVercel && !isNetlify) {
+        setCameraError('Для работы AR требуется HTTPS. Откройте приложение по защищённой ссылке.');
+        return;
+      }
+    }
+    
+    // Загружаем A-Frame перед показом AR
+    try {
+      await loadAFrame();
+    } catch (e) {
+      setCameraError('Не удалось загрузить AR библиотеки');
       return;
     }
     

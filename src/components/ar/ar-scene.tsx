@@ -1,10 +1,10 @@
 /**
  * =====================================================
- * AR-СЦЕНА С AR.JS NFT РАСПОЗНАВАНИЕМ
+ * AR-СЦЕНА - РАБОЧИЙ СКАНЕР
  * =====================================================
  * 
- * AR.js NFT работает с .fset файлами из public/assets/nft/
- * Распознаёт фото из парка и показывает 3D-объекты
+ * Использует A-Frame + AR.js для распознавания Hiro маркера
+ * Для NFT нужно сгенерировать .mind файлы
  * 
  * =====================================================
  */
@@ -21,10 +21,11 @@ interface ARSceneProps {
 }
 
 export function ARScene({ onReady, onError }: ARSceneProps) {
-  const sceneRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [loadingMessage, setLoadingMessage] = useState('Инициализация AR...');
-  const [arReady, setArReady] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('Инициализация...');
+  const [scanStatus, setScanStatus] = useState('Подготовка...');
+  const lastFoundRef = useRef<string | null>(null);
   
   const { 
     handleMarkerFound, 
@@ -32,122 +33,143 @@ export function ARScene({ onReady, onError }: ARSceneProps) {
     setCameraError,
     currentMarker,
     showingContent,
+    completedSteps,
   } = useQuest();
 
   // ---------------------------------------------------
-  // ИНИЦИАЛИЗАЦИЯ AR.JS NFT
+  // ИНИЦИАЛИЗАЦИЯ AR.JS
   // ---------------------------------------------------
   
   const initAR = useCallback(async () => {
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('CAMERA_NOT_SUPPORTED');
+        throw new Error('Камера не поддерживается');
       }
       
-      setLoadingMessage('Загрузка AR.js...');
+      setLoadingMessage('Загрузка A-Frame...');
       
-      // Проверяем загрузку A-Frame
-      const waitForAframe = () => new Promise<void>((resolve, reject) => {
-        const check = () => {
-          if ((window as any).AFRAME) {
-            resolve();
-          } else {
-            setTimeout(check, 100);
-          }
-        };
-        setTimeout(() => reject(new Error('A-Frame timeout')), 10000);
-        check();
-      });
+      // Ждём A-Frame
+      let aframeLoaded = false;
+      for (let i = 0; i < 100; i++) {
+        if ((window as any).AFRAME) {
+          aframeLoaded = true;
+          break;
+        }
+        await new Promise(r => setTimeout(r, 100));
+      }
       
-      await waitForAframe();
+      if (!aframeLoaded) {
+        throw new Error('A-Frame не загрузился');
+      }
       
       setLoadingMessage('Настройка камеры...');
       
-      // Создаём сцену A-Frame
+      // Создаём контейнер для сцены
+      if (!containerRef.current) return;
+      
+      // Создаём a-scene через A-Frame
       const scene = document.createElement('a-scene');
       scene.setAttribute('embedded', '');
-      scene.setAttribute('renderer', 'antialias: true, alpha: true');
+      scene.setAttribute('renderer', 'antialias: true; alpha: true; colorManagement: true;');
       scene.setAttribute('vr-mode-ui', 'enabled: false');
-      scene.setAttribute('arjs', 'sourceType: webcam, debugUIEnabled: false, detectionMode: mono_and_matrix, matrixCodeType: 3x3');
-      scene.setAttribute('gesture-detector', '');
+      scene.setAttribute('arjs', 'sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;');
       
-      // Добавляем камеру
-      const camera = document.createElement('a-entity');
-      camera.setAttribute('camera', '');
+      // Камера
+      const cameraEntity = document.createElement('a-entity');
+      cameraEntity.setAttribute('camera', '');
+      cameraEntity.setAttribute('look-controls', 'enabled: false');
+      scene.appendChild(cameraEntity);
       
-      // Создаём маркеры для каждого NFT
-      STEPS.forEach((step, index) => {
-        if (step.markerType === 'nft' && step.nftDescriptor) {
-          const marker = document.createElement('a-entity');
-          marker.setAttribute('nft', `type: nft, src: ${step.nftDescriptor}`);
-          marker.setAttribute('marker-handler', '');
-          marker.setAttribute('id', step.id);
-          
-          // При обнаружении - вызываем handleMarkerFound
-          marker.addEventListener('click', () => {
-            console.log('Marker found:', step.id);
-            handleMarkerFound(step.id);
-          });
-          
-          // Добавляем видимый объект при обнаружении
-          const entity = document.createElement('a-entity');
-          entity.setAttribute('gltf-model', '#' + step.objectType);
-          entity.setAttribute('scale', `${step.scale} ${step.scale} ${step.scale}`);
-          entity.setAttribute('position', '0 0 0');
-          entity.setAttribute('rotation', '0 0 0');
-          entity.setAttribute('animation', 'property: rotation; to: 0 360 0; loop: true; dur: 5000');
-          entity.style.display = 'none';
-          entity.classList.add('marker-entity');
-          
-          // Показываем при обнаружении маркера
-          marker.addEventListener('markerFound', () => {
-            console.log('NFT Marker found:', step.id);
-            handleMarkerFound(step.id);
-            entity.style.display = 'block';
-          });
-          
-          marker.addEventListener('markerLost', () => {
-            entity.style.display = 'none';
-          });
-          
-          marker.appendChild(entity);
-          scene.appendChild(marker);
+      // Для тестирования создаём Hiro маркер
+      // В production нужно использовать NFT с .mind файлами
+      const hiroMarker = document.createElement('a-entity');
+      hiroMarker.setAttribute('marker', 'type: pattern; url: https://raw.githubusercontent.com/AR-js-org/AR.js/master/data/images/hiro.patt');
+      
+      // 3D объект для визуализации
+      const modelEntity = document.createElement('a-entity');
+      modelEntity.setAttribute('gltf-model', '#model-astronaut');
+      modelEntity.setAttribute('scale', '0.5 0.5 0.5');
+      modelEntity.setAttribute('position', '0 0 0');
+      modelEntity.setAttribute('rotation', '-90 0 0');
+      modelEntity.setAttribute('visible', 'false');
+      modelEntity.id = 'hiro-model';
+      
+      // Анимация при появлении
+      modelEntity.setAttribute('animation', 'property: scale; from: 0 0 0; to: 0.5 0.5 0.5; dur: 500; easing: easeOutElastic');
+      
+      hiroMarker.appendChild(modelEntity);
+      scene.appendChild(hiroMarker);
+      
+      // Создаём 3D модель (скрытая)
+      const asset = document.createElement('a-assets');
+      
+      // Пробуем загрузить модель если есть
+      const modelItem = document.createElement('a-asset-item');
+      modelItem.id = 'model-astronaut';
+      modelItem.setAttribute('src', '/assets/models/astronaut.glb');
+      asset.appendChild(modelItem);
+      scene.appendChild(asset);
+      
+      // Обработчики событий для Hiro маркера
+      hiroMarker.addEventListener('markerFound', () => {
+        console.log('Hiro marker found!');
+        setScanStatus('Маркер найден! 🎉');
+        
+        // Находим текущий ожидаемый маркер
+        const expectedStep = STEPS[completedSteps];
+        if (expectedStep) {
+          handleMarkerFound(expectedStep.id);
+          lastFoundRef.current = expectedStep.id;
         }
+        
+        // Показываем модель
+        setTimeout(() => {
+          const model = document.getElementById('hiro-model');
+          if (model) model.setAttribute('visible', 'true');
+        }, 500);
       });
       
-      scene.appendChild(camera);
-      sceneRef.current?.appendChild(scene);
+      hiroMarker.addEventListener('markerLost', () => {
+        console.log('Hiro marker lost');
+        setScanStatus('Сканирование...');
+        
+        const model = document.getElementById('hiro-model');
+        if (model) model.setAttribute('visible', 'false');
+      });
       
-      // Ждём инициализации AR
       scene.addEventListener('loaded', () => {
-        console.log('AR scene loaded');
+        console.log('AR Scene loaded');
         setIsLoading(false);
-        setArReady(true);
         setCameraReady(true);
         onReady?.();
-        
-        setLoadingMessage('AR готов! Наведите на фото');
-        setTimeout(() => setLoadingMessage(''), 3000);
+        setScanStatus('Наведите камеру на Hiro маркер');
       });
       
-      // Обработчик ошибок
       scene.addEventListener('error', (e: any) => {
         console.error('AR error:', e);
         setCameraError('Ошибка AR');
-        onError?.('Ошибка AR');
+        onError?.('Ошибка');
       });
+      
+      containerRef.current.appendChild(scene);
+      
+      // Скрываем стандартные элементы AR.js
+      setTimeout(() => {
+        const enterVR = document.querySelector('.a-enter-vr');
+        if (enterVR) (enterVR as HTMLElement).style.display = 'none';
+      }, 2000);
       
     } catch (error: any) {
       console.error('Init error:', error);
-      let msg = 'Ошибка инициализации AR';
-      if (error.message?.includes('timeout')) msg = 'Не загрузился A-Frame';
-      else if (error.message === 'CAMERA_NOT_SUPPORTED') msg = 'Камера не поддерживается';
+      let msg = 'Ошибка инициализации';
+      if (error.message?.includes('timeout')) msg = 'Не загрузились AR библиотеки';
+      else if (error.message?.includes('камер')) msg = 'Камера недоступна';
       
       setCameraError(msg);
       onError?.(msg);
       setIsLoading(false);
     }
-  }, [handleMarkerFound, setCameraReady, setCameraError, onReady, onError]);
+  }, [handleMarkerFound, setCameraReady, setCameraError, onReady, onError, completedSteps]);
 
   // ---------------------------------------------------
   // МОНТИРОВАНИЕ
@@ -171,7 +193,7 @@ export function ARScene({ onReady, onError }: ARSceneProps) {
   
   return (
     <div 
-      ref={sceneRef}
+      ref={containerRef}
       style={{ 
         position: 'fixed', 
         top: 0, 
@@ -179,8 +201,78 @@ export function ARScene({ onReady, onError }: ARSceneProps) {
         width: '100%', 
         height: '100%',
         zIndex: 0,
+        backgroundColor: '#000',
       }}
     >
+      {/* Статус сканирования */}
+      <div style={{
+        position: 'absolute',
+        top: 20,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        padding: '12px 24px',
+        borderRadius: 25,
+        color: '#22c55e',
+        fontSize: '16px',
+        zIndex: 60,
+        fontWeight: 'bold',
+        border: '2px solid #22c55e',
+      }}>
+        📷 {scanStatus}
+      </div>
+
+      {/* Подсказка для тестирования */}
+      <div style={{
+        position: 'absolute',
+        top: 90,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        backgroundColor: 'rgba(0,0,0,0.9)',
+        padding: '15px',
+        borderRadius: 15,
+        color: 'white',
+        fontSize: '14px',
+        zIndex: 50,
+        maxWidth: '90%',
+        textAlign: 'center',
+        border: '1px solid #666',
+      }}>
+        <p style={{ color: '#fbbf24', fontWeight: 'bold', marginBottom: 8 }}>⚠️ Для тестирования:</p>
+        <p>1. Откройте https://raw.githubusercontent.com/AR-js-org/AR.js/master/data/images/hiro.png</p>
+        <p>2. Покажите это изображение на другом экране</p>
+        <p>3. Наведите камеру на изображение</p>
+        <p style={{ marginTop: 10, color: '#ef4444', fontSize: 12 }}>
+          Для своих маркеров нужны .mind файлы
+        </p>
+      </div>
+
+      {/* Прогресс */}
+      <div style={{
+        position: 'absolute',
+        bottom: 30,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        padding: '15px 30px',
+        borderRadius: 30,
+        color: 'white',
+        fontSize: '16px',
+        zIndex: 50,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+      }}>
+        <span>📍</span>
+        <span>Этап {completedSteps + 1} из {STEPS.length}</span>
+        <span style={{ color: '#22c55e' }}>{STEPS[completedSteps]?.title || ''}</span>
+      </div>
+
+      {/* 3D объект при обнаружении */}
+      {displayStep && showingContent && (
+        <MarkerObject step={displayStep} />
+      )}
+
       {/* Загрузка */}
       {isLoading && (
         <div style={{
@@ -196,8 +288,6 @@ export function ARScene({ onReady, onError }: ARSceneProps) {
           backgroundColor: 'rgba(0,0,0,0.95)',
           color: 'white',
           zIndex: 100,
-          padding: '20px',
-          textAlign: 'center',
         }}>
           <div style={{
             width: 60,
@@ -208,31 +298,6 @@ export function ARScene({ onReady, onError }: ARSceneProps) {
             animation: 'spin 1s linear infinite',
           }} />
           <p style={{ marginTop: 20, fontSize: 18 }}>{loadingMessage}</p>
-          <p style={{ marginTop: 10, fontSize: 14, opacity: 0.7 }}>
-            Распечатайте фото из public/assets/nft-sources/
-          </p>
-        </div>
-      )}
-
-      {/* 3D объект при обнаружении */}
-      {displayStep && showingContent && (
-        <MarkerObject step={displayStep} />
-      )}
-
-      {/* Подсказка */}
-      {arReady && !isLoading && (
-        <div style={{
-          position: 'absolute',
-          bottom: 30,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          backgroundColor: 'rgba(0,0,0,0.7)',
-          padding: '12px 24px',
-          borderRadius: 30,
-          color: 'white',
-          zIndex: 50,
-        }}>
-          📷 Наведите камеру на фото маркера
         </div>
       )}
 
@@ -247,7 +312,7 @@ export function ARScene({ onReady, onError }: ARSceneProps) {
 }
 
 // =====================================================
-// 3D-ОБЪЕКТ МАРКЕРА
+// 3D-ОБЪЕКТ
 // =====================================================
 
 interface MarkerObjectProps {
@@ -272,63 +337,36 @@ function MarkerObject({ step }: MarkerObjectProps) {
   }, [step.soundUrl]);
 
   const content = (() => {
-    switch (step.objectType) {
-      case 'scroll':
-        return (
-          <div className="relative bg-amber-100 border-4 border-amber-800 rounded-lg p-6 shadow-2xl max-w-xs"
-               style={{ transform: `scale(${step.scale})` }}>
-            <div className="text-center mb-3 border-b border-amber-400">
-              <span className="text-amber-800 font-bold text-lg">📜 {step.title}</span>
-            </div>
-            <p className="text-amber-900 text-sm">{step.scrollText}</p>
+    return (
+      <div style={{ transform: `scale(${step.scale})`, textAlign: 'center' }}>
+        <div className="w-40 h-40 bg-gradient-to-br from-green-400 to-blue-500 rounded-full flex items-center justify-center shadow-2xl mx-auto">
+          <span style={{ fontSize: '48px' }}>✨</span>
+        </div>
+        <p className="text-white text-2xl font-bold mt-6">{step.title}</p>
+        {step.scrollText && (
+          <div className="mt-4 bg-black/80 border-2 border-yellow-500 rounded-lg p-4 max-w-xs mx-auto">
+            <p className="text-yellow-300 text-base">{step.scrollText}</p>
           </div>
-        );
-      case 'key':
-        return (
-          <div style={{ transform: `scale(${step.scale})` }}>
-            <div className="w-32 h-40 flex items-center justify-center">🔑</div>
-            <p className="text-white text-center text-xl font-bold">Ключ найден!</p>
+        )}
+        {step.clueForNext && (
+          <div className="mt-4 bg-blue-900/80 border border-blue-400 rounded-lg p-3 max-w-xs mx-auto">
+            <p className="text-blue-200 text-sm">{step.clueForNext}</p>
           </div>
-        );
-      case 'gem':
-        return (
-          <div style={{ transform: `scale(${step.scale})` }}>
-            <div className="w-32 h-40 flex items-center justify-center">💎</div>
-            <p className="text-white text-center text-xl font-bold">Кристалл!</p>
+        )}
+        {step.id === 'marker_lake' && (
+          <div className="mt-6 bg-gradient-to-r from-yellow-400 to-amber-600 rounded-xl p-6">
+            <p className="text-white text-3xl font-bold">🎉 SEVA2024AR</p>
+            <p className="text-white text-lg mt-2">Скидка 25% на посещение парка!</p>
           </div>
-        );
-      case 'portal':
-        return (
-          <div style={{ transform: `scale(${step.scale})` }}>
-            <div className="w-32 h-40 flex items-center justify-center">🌀</div>
-            <p className="text-white text-center text-xl font-bold">Портал!</p>
-          </div>
-        );
-      case 'compass':
-        return (
-          <div style={{ transform: `scale(${step.scale})` }}>
-            <div className="w-32 h-40 flex items-center justify-center">🧭</div>
-            <p className="text-white text-center text-xl font-bold">Компас!</p>
-          </div>
-        );
-      case 'chest':
-      default:
-        return (
-          <div style={{ transform: `scale(${step.scale})` }}>
-            <div className="w-32 h-40 flex items-center justify-center">🎁</div>
-            <p className="text-white text-center text-xl font-bold">Сундук!</p>
-            <div className="mt-4 bg-black/80 border-2 border-yellow-500 rounded-lg p-4">
-              <p className="text-yellow-300 text-2xl font-mono">{step.scrollText || 'SEVA2024AR'}</p>
-            </div>
-          </div>
-        );
-    }
+        )}
+      </div>
+    );
   })();
 
   return (
     <div 
-      className={`fixed inset-0 flex items-center justify-center z-20 ${animClass}`}
-      style={{ background: 'rgba(0,0,0,0.3)' }}
+      className={`fixed inset-0 flex items-center justify-center z-30 ${animClass}`}
+      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)' }}
     >
       {content}
     </div>
